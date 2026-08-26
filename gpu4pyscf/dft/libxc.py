@@ -84,9 +84,10 @@ if _libxc is None:
         OR \n \
         `pip3 install gpu4pyscf-libxc-cuda12x`"
     )
-
-_libxc.xc_version_string.restype = ctypes.c_char_p
-__version__ = _libxc.xc_version_string().decode() + ' (CUDA)'
+    __version__ = 'libXC not available'
+else:
+    _libxc.xc_version_string.restype = ctypes.c_char_p
+    __version__ = _libxc.xc_version_string().decode() + ' (CUDA)'
 
 LDA_OUTPUT_LABELS = [
                 "zk",       # 1, 1
@@ -163,6 +164,13 @@ if _libxc is not None:
         if xc_name in libxc_cpu.XC_CODES:
             assert libxc_cpu.XC_CODES[xc_name] == xc_id, \
                     'Libxc for PySCF and GPU4PySCF incompatible'
+else:
+    # No GPU libXC available (e.g. on ROCm/HIP, where the CUDA libXC fork is not
+    # built). Leave the GPU functional tables empty so every functional reports
+    # on_gpu=False; XC is then evaluated on CPU via PySCF's libXC (see the
+    # eval_xc_eff fallback in numint), while the rest of DFT stays on GPU.
+    XC_IDS = np.zeros(0, dtype=np.int32)
+    XC_CODES = {}
 
 
 class XCfun:

@@ -35,13 +35,37 @@ CUSOLVER_EIG_TYPE_3 = 3
 CUSOLVER_EIG_MODE_NOVECTOR = 0
 CUSOLVER_EIG_MODE_VECTOR = 1
 
-libcusolver.cusolverDnDsygvd_bufferSize.restype = int
-libcusolver.cusolverDnDsygvd.restype = int
+# Generalized-eigenproblem backend. On ROCm/HIP, use hipSOLVER's
+# cuSOLVER-compatible "Dn" API (hipsolverDn*); on NVIDIA, use cuSOLVER
+# (cusolverDn*). The Dn symbols have identical signatures, but the enum values
+# differ between the two libraries, so both the library handle/symbol prefix and
+# the enum constants are selected per backend below. The CUDA path is unchanged.
+if cupy.cuda.runtime.is_hip:
+    libcusolver = ctypes.CDLL(find_library('hipsolver') or 'libhipsolver.so')
+    _DN_PREFIX = 'hipsolverDn'
+    CUSOLVER_EIG_TYPE_1 = 211         # HIPSOLVER_EIG_TYPE_1
+    CUSOLVER_EIG_TYPE_2 = 212
+    CUSOLVER_EIG_TYPE_3 = 213
+    CUSOLVER_EIG_MODE_NOVECTOR = 201  # HIPSOLVER_EIG_MODE_NOVECTOR
+    CUSOLVER_EIG_MODE_VECTOR = 202    # HIPSOLVER_EIG_MODE_VECTOR
+    _FILL_MODE_LOWER = 122            # HIPSOLVER_FILL_MODE_LOWER
+    _FILL_MODE_UPPER = 121            # HIPSOLVER_FILL_MODE_UPPER
+else:
+    _DN_PREFIX = 'cusolverDn'
+    _FILL_MODE_LOWER = _FILL_MODE_LOWER
+    _FILL_MODE_UPPER = cublas.CUBLAS_FILL_MODE_UPPER
+
+def _dn(name):
+    '''Look up a cuSOLVER/hipSOLVER Dn symbol by suffix, e.g. _dn("Dsygvd").'''
+    return getattr(libcusolver, _DN_PREFIX + name)
+
+_dn('Dsygvd_bufferSize').restype = int
+_dn('Dsygvd').restype = int
 
 _buffersize = {}
 
 # https://docs.nvidia.com/cuda/cusolver/index.html#cusolverdn-t-sygvd
-libcusolver.cusolverDnDsygvd_bufferSize.argtypes = [
+_dn('Dsygvd_bufferSize').argtypes = [
     ctypes.c_void_p, # handle
     ctypes.c_int,    # itype
     ctypes.c_int,    # jobz
@@ -55,7 +79,7 @@ libcusolver.cusolverDnDsygvd_bufferSize.argtypes = [
     ctypes.c_void_p  # *lwork
 ]
 
-libcusolver.cusolverDnDsygvd.argtypes = [
+_dn('Dsygvd').argtypes = [
     ctypes.c_void_p,  # handle
     ctypes.c_int,     # itype
     ctypes.c_int,     # jobz
@@ -72,7 +96,7 @@ libcusolver.cusolverDnDsygvd.argtypes = [
 ]
 
 # https://docs.nvidia.com/cuda/cusolver/index.html#cusolverdn-t-sygvd
-libcusolver.cusolverDnZhegvd_bufferSize.argtypes = [
+_dn('Zhegvd_bufferSize').argtypes = [
     ctypes.c_void_p, # handle
     ctypes.c_int,    # itype
     ctypes.c_int,    # jobz
@@ -86,7 +110,7 @@ libcusolver.cusolverDnZhegvd_bufferSize.argtypes = [
     ctypes.c_void_p  # *lwork
 ]
 
-libcusolver.cusolverDnZhegvd.argtypes = [
+_dn('Zhegvd').argtypes = [
     ctypes.c_void_p,  # handle
     ctypes.c_int,     # itype
     ctypes.c_int,     # jobz
@@ -129,14 +153,14 @@ def eigh(h, s, overwrite=False):
     else:
         lwork = ctypes.c_int(0)
         if h.dtype == np.float64:
-            fn = libcusolver.cusolverDnDsygvd_bufferSize
+            fn = _dn('Dsygvd_bufferSize')
         else:
-            fn = libcusolver.cusolverDnZhegvd_bufferSize
+            fn = _dn('Zhegvd_bufferSize')
         status = fn(
             _handle,
             CUSOLVER_EIG_TYPE_1,
             CUSOLVER_EIG_MODE_VECTOR,
-            cublas.CUBLAS_FILL_MODE_LOWER,
+            _FILL_MODE_LOWER,
             n,
             A.data.ptr,
             n,
@@ -152,16 +176,16 @@ def eigh(h, s, overwrite=False):
             raise LinAlgError("failed in buffer size")
 
     if h.dtype == np.float64:
-        fn = libcusolver.cusolverDnDsygvd
+        fn = _dn('Dsygvd')
     else:
-        fn = libcusolver.cusolverDnZhegvd
+        fn = _dn('Zhegvd')
     work = cupy.empty(lwork, dtype=h.dtype)
     devInfo = cupy.empty(1, dtype=np.int32)
     status = fn(
         _handle,
         CUSOLVER_EIG_TYPE_1,
         CUSOLVER_EIG_MODE_VECTOR,
-        cublas.CUBLAS_FILL_MODE_LOWER,
+        _FILL_MODE_LOWER,
         n,
         A.data.ptr,
         n,
