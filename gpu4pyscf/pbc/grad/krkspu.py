@@ -19,6 +19,7 @@ Analytical derivatives for DFT+U with kpoints sampling
 
 import numpy as np
 import cupy as cp
+from gpu4pyscf.lib.cusolver import eigh_std
 from pyscf.pbc import gto
 from gpu4pyscf.pbc.grad import krks as krks_grad
 from gpu4pyscf.pbc.dft.krkspu import _set_U, _make_minao_lo, reference_mol
@@ -45,7 +46,7 @@ def generate_first_order_local_orbitals(cell, minao_ref='MINAO', kpts=None):
 
         # Lowdin orthogonalization coefficients = S^{-1/2}
         S0 = sAB[k].conj().T.dot(C0_minao[k])
-        w2, v = cp.linalg.eigh(S0)
+        w2, v = eigh_std(S0)
         w = np.sqrt(w2)
         wv_ks.append((w, v))
         S0_lowdin.append((v/w).dot(v.conj().T))
