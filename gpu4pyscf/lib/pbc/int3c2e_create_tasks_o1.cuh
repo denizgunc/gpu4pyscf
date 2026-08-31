@@ -137,9 +137,18 @@ void _filter_ij_images(int& img_counts, int *img_pool, PBCIntEnvVars &envs,
         }
         __syncthreads();
         __shared__ int warp_offsets[WARPS];
+#if defined(__HIP_PLATFORM_AMD__)
+        // wave64: __ballot_sync returns a 64-bit lane mask; use the full mask and
+        // 64-bit popcount so lanes 32-63 are counted (a 32-bit ballot/0xffffffff
+        // would drop them). 1ull avoids UB when lane >= 32.
+        unsigned long long m = __ballot_sync(~0ull, keep);
+        int warp_count = __popcll(m);
+        int lane_index = __popcll(m & ((1ull << lane) - 1));
+#else
         unsigned m = __ballot_sync(0xffffffff, keep);
         int warp_count = __popc(m);
         int lane_index = __popc(m & ((1u << lane) - 1));
+#endif
         if (lane == 0) {
             warp_offsets[warp_id] = warp_count;
         }
