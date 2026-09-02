@@ -20,6 +20,7 @@
 #include <cuda_runtime.h>
 #include "gvhf-rys/vhf.cuh"
 #include "gvhf-rys/rys_contract_k.cuh"
+#include "../warp_size.h"   // WARP_SIZE (per-arch) + gpu4pyscf_effective_warp_size()
 
 // WARP_SIZE: compile-time constant used for shared-memory sizing.
 // `warpSize` (HIP/CUDA device-runtime built-in) is not constexpr,
@@ -1157,11 +1158,23 @@ while (1) {
 }
 
 extern "C" {
+// Effective wavefront width of the running device (32 on RDNA/NVIDIA, 64 on
+// GCN/CDNA). ft_ao.py queries this so the host-side nGv_per_block / shm_size it
+// passes to build_ft_aopair match the per-arch device WARP_SIZE in a single
+// multi-arch (fat-binary) build.
+int PBC_warp_size()
+{
+    return gpu4pyscf_effective_warp_size();
+}
+
 int build_ft_ao(double *out, RysIntEnvVars *envs, int ngrids, double *grids, int nbas)
 {
-    int nsh_per_block = FT_AO_THREADS/NG_PER_BLOCK;
-    dim3 threads(NG_PER_BLOCK, nsh_per_block);
-    int nbatches_grids = (ngrids + NG_PER_BLOCK - 1) / NG_PER_BLOCK;
+    // The host launch must match the device kernel's NG_PER_BLOCK (= WARP_SIZE,
+    // per-arch in a fat binary); use the running device's wavefront width.
+    int ng_per_block = gpu4pyscf_effective_warp_size();
+    int nsh_per_block = FT_AO_THREADS/ng_per_block;
+    dim3 threads(ng_per_block, nsh_per_block);
+    int nbatches_grids = (ngrids + ng_per_block - 1) / ng_per_block;
     int nbatches_shls = (nbas + nsh_per_block - 1) / nsh_per_block;
     dim3 blocks(nbatches_grids, nbatches_shls);
     ft_ao_bdiv_kernel<<<blocks, threads>>>(out, *envs, ngrids, grids);

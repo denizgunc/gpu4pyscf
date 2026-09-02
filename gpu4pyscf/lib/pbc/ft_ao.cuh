@@ -25,7 +25,11 @@
 #ifndef WARP_SIZE
 #define WARP_SIZE       32
 #endif
-#define FT_AO_THREADS   (WARP_SIZE*4)
+// Fixed at 128 (not WARP_SIZE*4): the ip1 kernels tile the Gv axis by the fixed
+// NG_PER_BLOCK=32 below, so the block size must not scale with the wavefront --
+// otherwise host launch (host pass WARP_SIZE=32) and device (per-arch WARP_SIZE)
+// disagree, and a wave64 block of 256 doubles the static shared array past LDS.
+#define FT_AO_THREADS   128
 #define NG_PER_BLOCK    32
 
 typedef struct {
